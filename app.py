@@ -469,10 +469,30 @@ def render_result_page():
 
     is_success = st.session_state["accusation_result"] == "success"
 
-    if is_success:
-        st.success("범인 지목 성공!")
-    else:
-        st.error("실패..")
+    banner_text = "범인 지목 성공!" if is_success else "실패.."
+    banner_color = "#e8f7ec" if is_success else "#fdecec"
+    banner_text_color = "#1f7a3d" if is_success else "#b42318"
+    banner_border = "#8fd19e" if is_success else "#f5a3a3"
+
+    st.markdown(
+        f"""
+        <div style="
+            width:100%;
+            text-align:center;
+            padding:22px 16px;
+            margin:10px 0 24px 0;
+            border-radius:18px;
+            background-color:{banner_color};
+            border:2px solid {banner_border};
+            color:{banner_text_color};
+            font-size:36px;
+            font-weight:800;
+        ">
+            {banner_text}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     left_col, right_col = st.columns([1, 2])
 
@@ -488,15 +508,23 @@ def render_result_page():
         st.write(st.session_state["result_message"])
 
     st.markdown("<br>", unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("다시 지목하기", use_container_width=True):
-            st.session_state["page"] = "accuse"
-            st.rerun()
-    with col2:
-        if st.button("게임 처음으로", use_container_width=True):
-            reset_game()
-            st.rerun()
+
+    if is_success:
+        _, center_col, _ = st.columns([1, 1, 1])
+        with center_col:
+            if st.button("게임 처음으로", use_container_width=True):
+                reset_game()
+                st.rerun()
+    else:
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("다시 지목하기", use_container_width=True):
+                st.session_state["page"] = "accuse"
+                st.rerun()
+        with col2:
+            if st.button("메인 화면으로 돌아가기", use_container_width=True):
+                st.session_state["page"] = "main"
+                st.rerun()
 
 
 # =====================================================
