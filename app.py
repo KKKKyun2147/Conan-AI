@@ -80,7 +80,14 @@ def mock_character_reply(user_input, char_name):
 def render_sidebar():
     with st.sidebar:
         st.title("등장인물")
-        st.caption("인물을 선택하면 해당 인물과의 대화창이 열립니다.")
+
+        current_page = st.session_state["page"]
+        interrogation_enabled = current_page == "main"
+
+        if interrogation_enabled:
+            st.caption("인물을 선택하면 해당 인물과의 대화창이 열립니다.")
+        else:
+            st.caption("게임 시작 후 메인 화면에서 심문할 수 있습니다.")
 
         for character in CHARACTERS:
             st.markdown("---")
@@ -107,9 +114,12 @@ def render_sidebar():
                     unsafe_allow_html=True,
                 )
 
-            if st.button(character["name"], key=f"select_{character['id']}", use_container_width=True):
-                st.session_state["selected_character"] = character["id"]
-                st.session_state["page"] = "main"
+            if interrogation_enabled:
+                if st.button(character["name"], key=f"select_{character['id']}", use_container_width=True):
+                    st.session_state["selected_character"] = character["id"]
+                    st.session_state["page"] = "main"
+            else:
+                st.button(character["name"], key=f"select_{character['id']}", use_container_width=True, disabled=True)
 
         st.markdown("---")
         if st.button("게임 초기화", use_container_width=True):
@@ -202,35 +212,61 @@ def render_main_page():
     if not selected_character_id:
         st.markdown("## 메인 화면")
         st.info("왼쪽 사이드바에서 심문할 등장인물을 선택하세요.")
-        st.markdown("\n")
+        st.markdown("
+")
         st.button("범인 지목", disabled=True, use_container_width=False)
         return
 
     character = get_character_by_id(selected_character_id)
     st.markdown(f"## {character['name']} 심문")
 
-    # 이전 대화 표시
-    chat_container = st.container(border=True)
-    with chat_container:
-        if not st.session_state["chat_logs"][selected_character_id]:
-            st.caption("아직 대화 기록이 없습니다.")
-        else:
-            for msg in st.session_state["chat_logs"][selected_character_id]:
-                with st.chat_message("user" if msg["role"] == "user" else "assistant"):
-                    st.write(msg["content"])
-                    st.caption(msg["time"])
+    left_col, right_col = st.columns([1, 2])
 
-    # 새 메시지 입력
-    user_input = st.chat_input(f"{character['name']}에게 질문하기")
-    if user_input:
-        add_message(selected_character_id, "user", user_input)
-        reply = mock_character_reply(user_input, character["name"])
-        add_message(selected_character_id, "assistant", reply)
-        st.rerun()
+    with left_col:
+        if character["image"]:
+            st.image(character["image"], use_container_width=True)
+        else:
+            st.markdown(
+                """
+                <div style="
+                    width:100%;
+                    height:360px;
+                    border:2px dashed #999;
+                    border-radius:16px;
+                    display:flex;
+                    align-items:center;
+                    justify-content:center;
+                    background-color:#fafafa;
+                    color:#666;
+                    font-size:18px;
+                ">
+                    선택한 인물의 초상화 자리
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+    with right_col:
+        chat_container = st.container(border=True)
+        with chat_container:
+            if not st.session_state["chat_logs"][selected_character_id]:
+                st.caption("아직 대화 기록이 없습니다.")
+            else:
+                for msg in st.session_state["chat_logs"][selected_character_id]:
+                    with st.chat_message("user" if msg["role"] == "user" else "assistant"):
+                        st.write(msg["content"])
+                        st.caption(msg["time"])
+
+        user_input = st.chat_input(f"{character['name']}에게 질문하기")
+        if user_input:
+            add_message(selected_character_id, "user", user_input)
+            reply = mock_character_reply(user_input, character["name"])
+            add_message(selected_character_id, "assistant", reply)
+            st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
-    _, _, right_col = st.columns([5, 2, 1])
-    with right_col:
+    _, _, button_col = st.columns([5, 2, 1])
+    with button_col:
         st.button("범인 지목", use_container_width=True)
 
 
