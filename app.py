@@ -1,100 +1,121 @@
-import streamlit as st
+import json
+from copy import deepcopy
 from datetime import datetime
+from pathlib import Path
+
+import streamlit as st
+from openai import OpenAI
 
 st.set_page_config(page_title="온라인 탐정게임", layout="wide")
 
 # =====================================================
-# 기본 데이터
+# 기본 설정
 # =====================================================
-CHARACTERS = [
+CHARACTER_FILE = "characters.json"
+DEFAULT_MODEL = "gpt-5.4-mini"
+
+CASE_SUMMARY = """
+12년 전, 한 아이가 흔적도 없이 사라졌다.
+사건은 실종으로 처리되었지만, 시간이 흐를수록 사람들의 진술에는 모순이 드러난다.
+플레이어는 제한된 심문 기회 안에 인물들의 거짓말을 파헤치고 진실에 도달해야 한다.
+"""
+
+CASE_DATA = {
+    "reason_keywords": ["방치", "시신 유기", "실종 신고 조작"],
+    "min_reason_keyword_matches": 2,
+}
+
+FALLBACK_CHARACTERS = [
     {"id": "char1", "name": "등장인물 1", "image": None, "is_culprit": False},
     {"id": "char2", "name": "등장인물 2", "image": None, "is_culprit": False},
     {"id": "char3", "name": "등장인물 3", "image": None, "is_culprit": True},
-    {"id": "char4", "name": "등장인물 4", "image": None, "is_culprit": False},
+    {"id": "char4", "name": "등장인물 4", "image": None, "is_culprit": True},
     {"id": "char5", "name": "등장인물 5", "image": None, "is_culprit": False},
 ]
 
-CASE_SUMMARY = """
-어느 날, 한 사건이 발생했다.
-플레이어는 다섯 명의 등장인물을 심문하며 단서를 모아야 한다.
-각 인물과의 대화 내용은 저장되며, 이를 바탕으로 진실에 가까워질 수 있다.
-"""
 
-# 실제 게임에서는 사건별 핵심 이유 키워드를 바꿔서 사용
-CORRECT_REASON_KEYWORDS = ["usb", "거짓말", "알리바이"]
+def load_characters(file_path: str):
+    path = Path(file_path)
+    if not path.exists():
+        return FALLBACK_CHARACTERS
+
+    with path.open("r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    if not isinstance(data, list) or not data:
+        return FALLBACK_CHARACTERS
+
+    return data
+
+
+CHARACTERS = load_characters(CHARACTER_FILE)
 
 # =====================================================
 # 세션 상태
 # =====================================================
 SESSION_DEFAULTS = {
-    "page": "start",                  # start -> opening -> main -> accuse -> result
+    "page": "start",  # start -> opening -> main -> accuse -> result
     "day": 1,
     "selected_character": None,
     "game_started": False,
     "game_over": False,
-    "chat_logs": {},                   # {char_id: [{role, content, time}]}
-    "chat_counts": {},                 # {char_id: int}
+    "chat_logs": {},
+    "chat_counts": {},
     "total_interrogations_used": 0,
     "max_total_interrogations": 10,
     "current_questions_used": 0,
     "max_questions_per_interrogation": 3,
     "interrogation_active": False,
-    "accused_character": None,
+    "accused_characters": [],
     "accusation_reason": "",
-    "accusation_result": None,         # success / fail
+    "accusation_result": None,
     "result_message": "",
+    "selected_model": DEFAULT_MODEL,
 }
 
 
-def init_session_state():
-    for key, value in SESSION_DEFAULTS.items():
-        if key not in st.session_state:
-            if isinstance(value, dict):
-                st.session_state[key] = {}
-            else:
-                st.session_state[key] = value
-
-    initialize_character_states()
+def default_value(value):
+    return deepcopy(value)
 
 
 
 def initialize_character_states():
     for character in CHARACTERS:
         char_id = character["id"]
-
         if char_id not in st.session_state["chat_logs"]:
             st.session_state["chat_logs"][char_id] = []
-
         if char_id not in st.session_state["chat_counts"]:
             st.session_state["chat_counts"][char_id] = 0
 
 
 
-def clear_all_chat_logs():
-    for character in CHARACTERS:
-        char_id = character["id"]
-        st.session_state["chat_logs"][char_id] = []
-        st.session_state["chat_counts"][char_id] = 0
+def init_session_state():
+    for key, value in SESSION_DEFAULTS.items():
+        if key not in st.session_state:
+            st.session_state[key] = default_value(value)
+    initialize_character_states()
 
 
 
 def reset_game():
-    for key in list(st.session_state.keys()):
+    keys = list(st.session_state.keys())
+    for key in keys:
         del st.session_state[key]
     init_session_state()
 
 
-# 단 한 번만 호출
 init_session_state()
 
 # =====================================================
 # 유틸 함수
 # =====================================================
 def get_character_by_id(char_id):
-    for character in CHARACTERS:
-        if character["id"] == char_id:
-            return character
-    return None
+    return next((character for character in CHARACTERS if character["id"] == char_id), None)
+
+
+
+def get_true_culprit_ids():
+    return {character["id"] for character in CHARACTERS if character.get("is_culprit", False)}
 
 
 
@@ -119,19 +140,8 @@ def get_chat_count(char_id):
 
 
 
-def mock_character_reply(user_input, char_name):
-    return (
-        f"[{char_name}]의 임시 응답입니다. "
-        f"'{user_input}'에 대한 실제 답변은 나중에 ChatGPT API와 연결하면 됩니다."
-    )
-
-
-
 def can_start_new_interrogation():
-    return (
-        st.session_state["total_interrogations_used"]
-        < st.session_state["max_total_interrogations"]
-    )
+    return st.session_state["total_interrogations_used"] < st.session_state["max_total_interrogations"]
 
 
 
@@ -156,10 +166,8 @@ def end_interrogation():
 
 
 def open_accusation_page():
-    st.session_state["selected_character"] = None
-    st.session_state["interrogation_active"] = False
-    st.session_state["current_questions_used"] = 0
-    st.session_state["accused_character"] = None
+    end_interrogation()
+    st.session_state["accused_characters"] = []
     st.session_state["accusation_reason"] = ""
     st.session_state["accusation_result"] = None
     st.session_state["result_message"] = ""
@@ -167,49 +175,165 @@ def open_accusation_page():
 
 
 
-def is_reason_correct(reason_text):
+def toggle_accused_character(char_id):
+    selected = st.session_state["accused_characters"]
+    if char_id in selected:
+        selected.remove(char_id)
+    else:
+        selected.append(char_id)
+
+
+
+def is_reason_correct(reason_text: str):
     normalized = reason_text.strip().lower()
     if not normalized:
         return False
 
-    matched_count = 0
-    for keyword in CORRECT_REASON_KEYWORDS:
-        if keyword.lower() in normalized:
-            matched_count += 1
-
-    return matched_count >= 1
+    keywords = CASE_DATA["reason_keywords"]
+    matched = sum(1 for keyword in keywords if keyword.lower() in normalized)
+    return matched >= CASE_DATA["min_reason_keyword_matches"]
 
 
 
 def judge_accusation():
-    accused_id = st.session_state["accused_character"]
+    selected_ids = set(st.session_state["accused_characters"])
+    true_ids = get_true_culprit_ids()
     reason = st.session_state["accusation_reason"]
-    character = get_character_by_id(accused_id)
 
-    if character is None:
-        st.session_state["accusation_result"] = "fail"
-        st.session_state["result_message"] = "지목한 인물 정보를 찾을 수 없습니다."
-        st.session_state["page"] = "result"
-        return
-
-    culprit_correct = character["is_culprit"]
+    culprit_correct = selected_ids == true_ids
     reason_correct = is_reason_correct(reason)
 
     if culprit_correct and reason_correct:
         st.session_state["accusation_result"] = "success"
+        culprit_names = [get_character_by_id(char_id)["name"] for char_id in selected_ids]
+        joined_names = ", ".join(culprit_names)
         st.session_state["result_message"] = (
-            "...그래, 더는 숨길 수 없겠네. 네가 말한 이유가 맞아. "
-            "내가 그 사건의 범인이야."
+            f"{joined_names}: ...그래, 여기까지 왔다면 더는 부정할 수 없겠네. "
+            "네가 짚은 이유도 맞아. 우리가 그날의 진실을 숨겼다."
         )
         st.session_state["game_over"] = True
     else:
         st.session_state["accusation_result"] = "fail"
         st.session_state["result_message"] = (
-            "아니야, 난 억울해. 네 추리는 틀렸어. "
-            "그 이유만으로 날 범인이라고 할 수는 없어."
+            "선택한 인물들: 네 추리는 아직 완성되지 않았어. "
+            "범인 선택이 틀렸거나, 제시한 이유가 결정적이지 않아."
         )
 
     st.session_state["page"] = "result"
+
+
+
+def get_openai_client():
+    api_key = st.secrets.get("OPENAI_KEY")
+    if not api_key:
+        return None
+    return OpenAI(api_key=api_key)
+
+
+
+def build_character_system_prompt(character):
+    relationships = character.get("relationship", {})
+    others = relationships.get("others", {})
+    others_text = "
+".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
+
+    emotion = character.get("emotion", {})
+    timeline = character.get("timeline", {})
+    lie = character.get("lie", {})
+    is_player_character = "플레이어" in character.get("name", "")
+
+    additional_rules = """
+8. 이 인물은 플레이어 자신이다. 따라서 사용자의 질문은 외부 인물이 던지는 말이 아니라,
+   스스로 기억을 더듬기 위한 독백형 질문으로 받아들여라.
+9. 답변은 '대화를 나눈다'기보다 흐릿한 기억, 자기반문, 단편적인 회상을 꺼내는 방식으로 한다.
+10. 기억이 완전하지 않기 때문에 확신하지 못하는 표현, 끊기는 문장, 떠오르는 장면 묘사가 섞여도 된다.
+11. 다만 사건 해결에 도움이 되는 실마리는 남겨라.
+""".strip() if is_player_character else ""
+
+    return f"""
+너는 추리 게임 속 등장인물 '{character.get('name', '이름 없음')}'이다.
+절대 AI라고 말하지 말고, 오직 캐릭터의 시점에서만 답해라.
+
+[사건 개요]
+{CASE_SUMMARY.strip()}
+
+[공개 프로필]
+- {character.get('public_profile', '')}
+
+[성격]
+- {character.get('personality', '')}
+
+[말투]
+- {character.get('speech_style', '')}
+
+[행동 목표]
+- {character.get('goal', '')}
+
+[감정 상태]
+- 기본: {emotion.get('default', '')}
+- 압박 시: {emotion.get('under_pressure', '')}
+- 지목당했을 때: {emotion.get('when_accused', '')}
+
+[관계]
+- 피해자: {relationships.get('victim', '')}
+- 다른 인물들:
+{others_text}
+
+[시간 흐름]
+- 사건 전: {timeline.get('before', '')}
+- 사건 당시: {timeline.get('during', '')}
+- 사건 후: {timeline.get('after', '')}
+
+[알리바이]
+- {character.get('alibi', '')}
+
+[숨기는 사실]
+- {character.get('secret', '')}
+
+[거짓말 설정]
+- 질문 주제: {lie.get('about', '')}
+- 실제 진실: {lie.get('truth', '')}
+- 겉으로 하는 말: {lie.get('fake_statement', '')}
+
+[답변 규칙]
+1. 답변은 2~5문장으로 짧고 자연스럽게 한다.
+2. 설정에 없는 사실은 지어내지 않는다.
+3. 모르는 것은 모른다고 말할 수 있다.
+4. 숨기는 사실과 실제 진실은 먼저 자백하지 않는다.
+5. 사용자가 압박하면 감정 상태 변화가 약간 드러나게 한다.
+6. 같은 질문을 반복받아도 완전히 똑같은 문장을 복붙하지 않는다.
+7. 플레이어가 단서를 모을 수 있도록, 완전한 자백은 피하되 캐릭터답게 미세한 틈은 남긴다.
+{additional_rules}
+""".strip()
+
+
+
+def generate_character_reply(character, user_input):
+    client = get_openai_client()
+    if client is None:
+        return "OPENAI_KEY가 설정되지 않아 임시 응답으로 표시됩니다. secrets에 키를 넣어주세요."
+
+    try:
+        history = get_chat_log(character["id"])
+        messages = [{"role": "system", "content": build_character_system_prompt(character)}]
+
+        for msg in history:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+
+        messages.append({"role": "user", "content": user_input})
+
+        response = client.responses.create(
+            model=st.session_state["selected_model"],
+            input=messages,
+        )
+
+        reply = (response.output_text or "").strip()
+        if not reply:
+            return "...지금은 바로 대답하기 어렵네. 다시 물어봐 줘."
+        return reply
+
+    except Exception as e:
+        return f"API 응답 생성 중 오류가 발생했습니다: {e}"
 
 
 
@@ -237,8 +361,8 @@ def render_image_placeholder(text, height=200):
 
 
 
-def render_character_image(character, height=240, placeholder_text="초상화 자리"):
-    if character and character["image"]:
+def render_character_image(character, height=220, placeholder_text="초상화 자리"):
+    if character and character.get("image") and Path(character["image"]).exists():
         st.image(character["image"], use_container_width=True)
     else:
         render_image_placeholder(placeholder_text, height=height)
@@ -259,25 +383,22 @@ def render_sidebar():
             if interrogation_active:
                 st.caption("현재 심문이 진행 중입니다. 질문 3개를 모두 사용한 뒤 돌아가기를 눌러주세요.")
             elif no_more_turns:
-                st.caption("모든 심문 기회를 사용했습니다. 이제 범인을 지목할 수 있습니다.")
+                st.caption("모든 심문 기회를 사용했습니다. 이제 범인을 지목하세요.")
             else:
                 st.caption("인물을 선택하면 심문이 시작됩니다.")
         else:
-            st.caption("게임 시작 후 메인 화면에서 심문할 수 있습니다.")
+            st.caption("게임 시작 후 광장에서 심문할 수 있습니다.")
 
         st.markdown(
             f"**심문 횟수:** {st.session_state['total_interrogations_used']} / {st.session_state['max_total_interrogations']}"
         )
+        st.markdown(f"**모델:** {st.session_state['selected_model']}")
 
         for character in CHARACTERS:
             st.markdown("---")
             render_character_image(character, height=140, placeholder_text="초상화 자리")
 
-            button_disabled = (
-                (not interrogation_enabled)
-                or interrogation_active
-                or no_more_turns
-            )
+            button_disabled = (not interrogation_enabled) or interrogation_active or no_more_turns or st.session_state["game_over"]
 
             if st.button(
                 character["name"],
@@ -285,8 +406,7 @@ def render_sidebar():
                 use_container_width=True,
                 disabled=button_disabled,
             ):
-                started = start_interrogation(character["id"])
-                if started:
+                if start_interrogation(character["id"]):
                     st.rerun()
 
         st.markdown("---")
@@ -326,7 +446,7 @@ def render_opening_page():
 
 
 # =====================================================
-# 메인 화면
+# 광장
 # =====================================================
 def render_main_page():
     header_left, header_right = st.columns([6, 1])
@@ -340,15 +460,12 @@ def render_main_page():
 
     if not selected_character_id:
         st.markdown("## 광장")
-        remaining = (
-            st.session_state["max_total_interrogations"]
-            - st.session_state["total_interrogations_used"]
-        )
+        remaining = st.session_state["max_total_interrogations"] - st.session_state["total_interrogations_used"]
         st.info(f"왼쪽 사이드바에서 심문할 등장인물을 선택하세요. 남은 심문 횟수: {remaining}회")
 
         _, _, button_col = st.columns([5, 2, 1])
         with button_col:
-            if st.button("범인 지목", use_container_width=True):
+            if st.button("범인 지목", use_container_width=True, disabled=st.session_state["game_over"]):
                 open_accusation_page()
                 st.rerun()
         return
@@ -358,7 +475,8 @@ def render_main_page():
         st.error("선택한 등장인물 정보를 찾을 수 없습니다.")
         return
 
-    st.markdown(f"## {character['name']} 심문")
+    section_title = "기억 되짚기" if "플레이어" in character["name"] else "심문"
+    st.markdown(f"## {character['name']} {section_title}")
 
     left_col, right_col = st.columns([1, 2])
 
@@ -373,7 +491,6 @@ def render_main_page():
         chat_container = st.container(border=True)
         with chat_container:
             chat_log = get_chat_log(selected_character_id)
-
             if not chat_log:
                 st.caption("아직 대화 기록이 없습니다.")
             else:
@@ -387,7 +504,7 @@ def render_main_page():
         interrogation_finished = questions_used >= max_questions
 
         if interrogation_finished:
-            st.warning("이번 심문에서는 질문 3개를 모두 사용했습니다. 돌아가기를 눌러 메인 화면으로 이동하세요.")
+            st.warning("이번 심문에서는 질문 3개를 모두 사용했습니다. 돌아가기를 눌러 광장으로 이동하세요.")
             col_back, col_accuse = st.columns(2)
             with col_back:
                 if st.button("돌아가기", use_container_width=True):
@@ -398,12 +515,15 @@ def render_main_page():
                     open_accusation_page()
                     st.rerun()
         else:
-            user_input = st.chat_input(
-                f"{character['name']}에게 질문하기 ({questions_used + 1}/{max_questions})"
+            input_placeholder = (
+                f"기억을 더듬어 보기 ({questions_used + 1}/{max_questions})"
+                if "플레이어" in character["name"]
+                else f"{character['name']}에게 질문하기 ({questions_used + 1}/{max_questions})"
             )
+            user_input = st.chat_input(input_placeholder)
             if user_input:
                 add_message(selected_character_id, "user", user_input)
-                reply = mock_character_reply(user_input, character["name"])
+                reply = generate_character_reply(character, user_input)
                 add_message(selected_character_id, "assistant", reply)
                 st.session_state["current_questions_used"] += 1
                 st.rerun()
@@ -421,39 +541,34 @@ def render_main_page():
 # =====================================================
 def render_accusation_page():
     st.markdown("## 범인 지목")
-    st.write("등장인물을 선택하고, 범인이라고 생각하는 이유를 작성하세요.")
+    st.write("버튼을 눌러 범인이라고 생각하는 인물을 추가하거나 해제하세요.")
 
     if st.button("광장으로 돌아가기"):
         st.session_state["page"] = "main"
         st.rerun()
 
-    st.markdown("### 1. 지목할 등장인물 선택")
     cols = st.columns(len(CHARACTERS))
-
     for idx, character in enumerate(CHARACTERS):
         with cols[idx]:
             render_character_image(character, height=170, placeholder_text="초상화 자리")
-            selected = st.session_state["accused_character"] == character["id"]
-            label = f"선택됨: {character['name']}" if selected else character["name"]
+            selected = character["id"] in st.session_state["accused_characters"]
+            label = f"✔ {character['name']}" if selected else character['name']
             if st.button(label, key=f"accuse_select_{character['id']}", use_container_width=True):
-                st.session_state["accused_character"] = character["id"]
+                toggle_accused_character(character["id"])
                 st.rerun()
 
-    selected_character = get_character_by_id(st.session_state["accused_character"])
-    if selected_character:
-        st.success(f"현재 지목 대상: {selected_character['name']}")
+    selected_names = [get_character_by_id(char_id)["name"] for char_id in st.session_state["accused_characters"]]
+    st.caption(f"선택된 인물: {', '.join(selected_names) if selected_names else '없음'}")
 
-    st.markdown("### 2. 지목 이유 작성")
     reason = st.text_area(
-        "왜 이 인물이 범인이라고 생각하나요?",
+        "왜 이 인물들이 범인이라고 생각하나요?",
         value=st.session_state["accusation_reason"],
         height=160,
-        placeholder="증거, 모순, 알리바이 문제 등을 적어보세요.",
+        placeholder="핵심 근거를 적어보세요. 정답 처리는 핵심 키워드 2개 이상이 필요합니다.",
     )
     st.session_state["accusation_reason"] = reason
 
-    submit_disabled = not st.session_state["accused_character"] or not reason.strip()
-    if st.button("판정 받기", use_container_width=True, disabled=submit_disabled):
+    if st.button("판정 받기", use_container_width=True):
         judge_accusation()
         st.rerun()
 
@@ -462,13 +577,10 @@ def render_accusation_page():
 # 판정 화면
 # =====================================================
 def render_result_page():
-    accused_character = get_character_by_id(st.session_state["accused_character"])
-    if accused_character is None:
-        st.error("판정할 인물 정보가 없습니다.")
-        return
+    selected_characters = [get_character_by_id(char_id) for char_id in st.session_state["accused_characters"]]
+    selected_characters = [char for char in selected_characters if char is not None]
 
     is_success = st.session_state["accusation_result"] == "success"
-
     banner_text = "범인 지목 성공!" if is_success else "실패.."
     banner_color = "#e8f7ec" if is_success else "#fdecec"
     banner_text_color = "#1f7a3d" if is_success else "#b42318"
@@ -494,21 +606,20 @@ def render_result_page():
         unsafe_allow_html=True,
     )
 
-    left_col, right_col = st.columns([1, 2])
+    if selected_characters:
+        image_cols = st.columns(len(selected_characters))
+        for idx, character in enumerate(selected_characters):
+            with image_cols[idx]:
+                render_character_image(character, height=240, placeholder_text="지목한 인물의 초상화 자리")
+                st.markdown(f"### {character['name']}")
 
-    with left_col:
-        render_character_image(accused_character, height=320, placeholder_text="지목한 인물의 초상화 자리")
-        st.markdown(f"### {accused_character['name']}")
+    st.markdown("### 제출한 지목 이유")
+    st.info(st.session_state["accusation_reason"] or "입력된 이유 없음")
 
-    with right_col:
-        st.markdown("### 제출한 지목 이유")
-        st.info(st.session_state["accusation_reason"])
-
-        st.markdown("### 인물의 응답")
-        st.write(st.session_state["result_message"])
+    st.markdown("### 인물의 응답")
+    st.write(st.session_state["result_message"])
 
     st.markdown("<br>", unsafe_allow_html=True)
-
     if is_success:
         _, center_col, _ = st.columns([1, 1, 1])
         with center_col:
@@ -522,7 +633,7 @@ def render_result_page():
                 st.session_state["page"] = "accuse"
                 st.rerun()
         with col2:
-            if st.button("메인 화면으로 돌아가기", use_container_width=True):
+            if st.button("광장으로 돌아가기", use_container_width=True):
                 st.session_state["page"] = "main"
                 st.rerun()
 
