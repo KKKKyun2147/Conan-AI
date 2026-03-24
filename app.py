@@ -308,11 +308,11 @@ def judge_accusation():
     ])
     if culprit_correct and reason_correct:
         st.session_state["accusation_result"] = "success"
-        st.session_state["result_message"] = combined_reaction + "\n범인 지목 성공!"
+        st.session_state["result_message"] = combined_reaction
         st.session_state["game_over"] = True
     else:
         st.session_state["accusation_result"] = "fail"
-        st.session_state["result_message"] = combined_reaction + "\n실패.."
+        st.session_state["result_message"] = combined_reaction
 
     st.session_state["page"] = "result"
 
