@@ -2,7 +2,7 @@
   {
     "id": "char1",
     "name": "조이레",
-    "image": "characters/lee_re.png",
+    "image": "images/조이레.png",
     "role": "suspect",
     "is_culprit": true,
     "public_profile": "실종된 아이 '서원'의 엄마. 사건 이후 오랫동안 비운의 어머니로 살아옴",
@@ -161,7 +161,7 @@
   {
     "id": "char2",
     "name": "서동현",
-    "image": "characters/dong_hyun.png",
+    "image": "images/서동현.png",
     "role": "suspect",
     "is_culprit": true,
     "public_profile": "서원의 아빠. 겉보기엔 침착하고 사회적 지위를 갖춘 가장",
@@ -328,7 +328,7 @@
   {
     "id": "char3",
     "name": "박한결",
-    "image": "characters/han_gyeol.png",
+    "image": "images/박한결.png",
     "role": "witness",
     "is_culprit": false,
     "public_profile": "서원네 집 근처에 살던 이웃. 사건 당시 무언가를 보거나 들은 사람",
@@ -487,7 +487,7 @@
   {
     "id": "char4",
     "name": "서한나",
-    "image": "characters/han_na.png",
+    "image": "images/서한나.png",
     "role": "witness",
     "is_culprit": false,
     "public_profile": "서원의 언니. 사건 당시 어린아이였지만 오랫동안 기억을 붙들고 살아온 사람",
@@ -647,7 +647,7 @@
   {
     "id": "char5",
     "name": "전경 (플레이어)",
-    "image": "characters/jeon_kyung.png",
+    "image": "images/전경.png",
     "role": "investigator",
     "is_culprit": false,
     "public_profile": "과거 서원 사건을 맡았던 퇴직 형사. 기억을 다시 꿰매며 사건에 복귀한 인물",
