@@ -212,8 +212,7 @@ def render_main_page():
     if not selected_character_id:
         st.markdown("## 메인 화면")
         st.info("왼쪽 사이드바에서 심문할 등장인물을 선택하세요.")
-        st.markdown("
-")
+        st.markdown("")
         st.button("범인 지목", disabled=True, use_container_width=False)
         return
 
