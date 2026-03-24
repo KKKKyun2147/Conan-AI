@@ -299,14 +299,10 @@ def judge_accusation():
 
     reactions = generate_accusation_reactions(selected_ids, reason, culprit_correct and reason_correct)
 
-    combined_reaction = "
-
-".join([
-        f"[{get_character_by_id(cid)['name']}]
-{reactions[cid]}"
+    combined_reaction = "\n\n".join([
+        f"[{get_character_by_id(cid)['name']}]\n{reactions[cid]}"
         for cid in selected_ids if cid in reactions
     ])
-
     if culprit_correct and reason_correct:
         st.session_state["accusation_result"] = "success"
         st.session_state["result_message"] = combined_reaction + "
