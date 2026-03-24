@@ -195,6 +195,101 @@ def is_reason_correct(reason_text: str):
 
 
 
+def build_accusation_prompt(character, reason_text, is_correct_verdict):
+    relationships = character.get("relationship", {})
+    others = relationships.get("others", {})
+    others_text = "
+".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
+    emotion = character.get("emotion", {})
+    timeline = character.get("timeline", {})
+    lie = character.get("lie", {})
+
+    verdict_instruction = (
+        "플레이어의 지목과 이유는 정답으로 판정되었다. 따라서 캐릭터 성격을 유지한 채, 결국 범행 또는 은폐 사실을 인정하는 방향으로 무너져라. 처음 한 문장 정도는 버티거나 흔들려도 되지만, 마지막에는 분명히 자백해야 한다."
+        if is_correct_verdict
+        else "플레이어의 지목 또는 이유는 오답으로 판정되었다. 따라서 캐릭터 성격을 유지한 채, 자신의 결백을 주장하고 억울함이나 분노를 드러내라. 자백하면 안 된다."
+    )
+
+    return f"""
+너는 추리 게임 속 등장인물 '{character.get('name', '이름 없음')}'이다.
+절대 AI라고 말하지 말고, 오직 캐릭터의 시점에서만 말해라.
+
+[플레이어가 제출한 범인 지목 이유]
+{reason_text}
+
+[캐릭터 설정]
+- 공개 프로필: {character.get('public_profile', '')}
+- 성격: {character.get('personality', '')}
+- 말투: {character.get('speech_style', '')}
+- 목표: {character.get('goal', '')}
+
+[감정]
+- 기본: {emotion.get('default', '')}
+- 압박 시: {emotion.get('under_pressure', '')}
+- 지목당했을 때: {emotion.get('when_accused', '')}
+
+[관계]
+- 피해자: {relationships.get('victim', '')}
+- 다른 인물들:
+{others_text}
+
+[시간 흐름]
+- 사건 전: {timeline.get('before', '')}
+- 사건 당시: {timeline.get('during', '')}
+- 사건 후: {timeline.get('after', '')}
+
+[알리바이]
+- {character.get('alibi', '')}
+
+[숨기는 사실]
+- {character.get('secret', '')}
+
+[거짓말 설정]
+- 질문 주제: {lie.get('about', '')}
+- 실제 진실: {lie.get('truth', '')}
+- 겉으로 하는 말: {lie.get('fake_statement', '')}
+
+[이번 응답의 핵심 규칙]
+- {verdict_instruction}
+- 답변은 2~4문장으로 짧게 한다.
+- 설정에 없는 사실은 만들지 않는다.
+- 캐릭터의 말투와 감정선을 유지한다.
+- 플레이어가 쓴 이유를 직접 받아치는 느낌으로 반응한다.
+""".strip()
+
+
+def generate_accusation_reactions(selected_ids, reason_text, is_correct_verdict):
+    client = get_openai_client()
+    results = {}
+
+    for char_id in selected_ids:
+        character = get_character_by_id(char_id)
+        if not character:
+            continue
+
+        if client is None:
+            results[char_id] = (
+                "...그래, 네 말이 맞아." if is_correct_verdict else "아니야, 난 억울해. 그건 네 오해야."
+            )
+            continue
+
+        prompt = build_accusation_prompt(character, reason_text, is_correct_verdict)
+
+        try:
+            response = client.responses.create(
+                model=st.session_state["selected_model"],
+                input=[{"role": "user", "content": prompt}],
+            )
+            reply = (response.output_text or "").strip()
+            results[char_id] = reply if reply else (
+                "...그래, 더는 숨길 수 없겠네." if is_correct_verdict else "아니야, 그건 틀렸어."
+            )
+        except Exception as e:
+            results[char_id] = f"(오류) {e}"
+
+    return results
+
+
 def judge_accusation():
     selected_ids = set(st.session_state["accused_characters"])
     true_ids = get_true_culprit_ids()
@@ -203,21 +298,27 @@ def judge_accusation():
     culprit_correct = selected_ids == true_ids
     reason_correct = is_reason_correct(reason)
 
+    reactions = generate_accusation_reactions(selected_ids, reason, culprit_correct and reason_correct)
+
+    combined_reaction = "
+
+".join([
+        f"[{get_character_by_id(cid)['name']}]
+{reactions[cid]}"
+        for cid in selected_ids if cid in reactions
+    ])
+
     if culprit_correct and reason_correct:
         st.session_state["accusation_result"] = "success"
-        culprit_names = [get_character_by_id(char_id)["name"] for char_id in selected_ids]
-        joined_names = ", ".join(culprit_names)
-        st.session_state["result_message"] = (
-            f"{joined_names}: ...그래, 여기까지 왔다면 더는 부정할 수 없겠네. "
-            "네가 짚은 이유도 맞아. 우리가 그날의 진실을 숨겼다."
-        )
+        st.session_state["result_message"] = combined_reaction + "
+
+범인 지목 성공!"
         st.session_state["game_over"] = True
     else:
         st.session_state["accusation_result"] = "fail"
-        st.session_state["result_message"] = (
-            "선택한 인물들: 네 추리는 아직 완성되지 않았어. "
-            "범인 선택이 틀렸거나, 제시한 이유가 결정적이지 않아."
-        )
+        st.session_state["result_message"] = combined_reaction + "
+
+실패.."
 
     st.session_state["page"] = "result"
 
@@ -234,7 +335,9 @@ def get_openai_client():
 def build_character_system_prompt(character):
     relationships = character.get("relationship", {})
     others = relationships.get("others", {})
-    others_text = "\n".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
+    others_text = "
+".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
+
     emotion = character.get("emotion", {})
     timeline = character.get("timeline", {})
     lie = character.get("lie", {})
