@@ -257,6 +257,7 @@ def build_accusation_prompt(character, reason_text, is_correct_verdict):
 """.strip()
 
 
+
 def generate_accusation_reactions(selected_ids, reason_text, is_correct_verdict):
     client = get_openai_client()
     results = {}
@@ -287,6 +288,7 @@ def generate_accusation_reactions(selected_ids, reason_text, is_correct_verdict)
             results[char_id] = f"(오류) {e}"
 
     return results
+
 
 
 def judge_accusation():
@@ -326,7 +328,8 @@ def get_openai_client():
 def build_character_system_prompt(character):
     relationships = character.get("relationship", {})
     others = relationships.get("others", {})
-    others_text = "\n".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
+    others_text = "
+".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
 
     emotion = character.get("emotion", {})
     timeline = character.get("timeline", {})
@@ -394,14 +397,6 @@ def build_character_system_prompt(character):
 8. 답변은 2~5문장으로 짧게 유지해라.
 9. 설정에 없는 사실은 지어내지 마라.
 10. 숨기는 사실과 실제 진실을 한 번에 전부 털어놓지 마라. 기억을 조금씩 떠올리듯 말해라.
-11. 좋은 예시 톤:
-- '복도였나... 아니, 현관 쪽이었을지도 몰라. 그런데 울음소리는 분명 안에서 났어.'
-- '그날 내가 놓친 게 있었어. 작은 얼룩이었는데, 그냥 지나쳤지.'
-- '이상했어. 슬퍼하는 얼굴이었는데도, 어딘가 너무 정돈돼 있었어.'
-12. 나쁜 예시 톤:
-- '전경은 그날 부모를 의심했다.'
-- '내 이름은 전경이고, 나는 이 사건의 담당 형사였다.'
-- '당신의 질문에 답하겠다.'
 """.strip()
 
     return f"""
@@ -418,6 +413,181 @@ def build_character_system_prompt(character):
 """.strip()
 
 
+def normalize_question(user_input: str) -> str:
+    return user_input.strip().lower()
+
+
+def retrieve_relevant_memory(character, query: str):
+    memories = []
+
+    for memory in character.get("timeline_memory", []):
+        sensory = memory.get("sensory", {})
+        joined = " ".join([
+            str(memory.get("time", "")),
+            str(memory.get("location", "")),
+            str(memory.get("event", "")),
+            " ".join(sensory.get("saw", [])),
+            " ".join(sensory.get("heard", [])),
+            " ".join(sensory.get("did", [])),
+        ]).lower()
+
+        trigger_bonus = 0
+        for trigger_word in character.get("trigger_memory", {}).keys():
+            if trigger_word.lower() in query:
+                trigger_bonus += 1
+
+        score = sum(1 for token in query.split() if token and token in joined) + trigger_bonus
+        if score > 0:
+            memories.append((score, memory))
+
+    memories.sort(key=lambda x: x[0], reverse=True)
+    return [memory for _, memory in memories[:2]]
+
+
+def apply_knowledge_boundary(character, memories, query: str):
+    kb = character.get("knowledge_boundary", {})
+    directly_seen = kb.get("directly_seen", [])
+    inferred = kb.get("inferred", [])
+    unknown = kb.get("unknown", [])
+
+    visible_memory = []
+    inferred_memory = []
+
+    for memory in memories:
+        event_text = str(memory.get("event", ""))
+        if any(item in event_text for item in directly_seen):
+            visible_memory.append(memory)
+        elif any(item in event_text for item in inferred):
+            inferred_memory.append(memory)
+        else:
+            visible_memory.append(memory)
+
+    blocked_topics = [item for item in unknown if str(item).lower() in query]
+
+    return {
+        "visible_memory": visible_memory,
+        "inferred_memory": inferred_memory,
+        "blocked_topics": blocked_topics,
+    }
+
+
+def apply_lie_strategy(character, bounded_knowledge, query: str):
+    if character.get("role") == "investigator" or character.get("is_player", False):
+        return {
+            "mode": "memory_recall",
+            "bounded_knowledge": bounded_knowledge,
+        }
+
+    lie = character.get("lie_strategy", {})
+    deny = lie.get("deny", [])
+    minimize = lie.get("minimize", [])
+    shift_blame = lie.get("shift_blame", [])
+    avoid = lie.get("avoid", [])
+
+    for topic in avoid:
+        if str(topic).lower() in query:
+            return {
+                "mode": "avoid",
+                "reason": topic,
+                "bounded_knowledge": bounded_knowledge,
+            }
+
+    for topic in deny:
+        if str(topic).lower() in query:
+            return {
+                "mode": "deny",
+                "reason": topic,
+                "bounded_knowledge": bounded_knowledge,
+            }
+
+    for topic in minimize:
+        if str(topic).lower() in query:
+            return {
+                "mode": "minimize",
+                "reason": topic,
+                "bounded_knowledge": bounded_knowledge,
+            }
+
+    for topic in shift_blame:
+        if str(topic).lower() in query:
+            return {
+                "mode": "shift_blame",
+                "reason": topic,
+                "bounded_knowledge": bounded_knowledge,
+            }
+
+    return {
+        "mode": "normal",
+        "bounded_knowledge": bounded_knowledge,
+    }
+
+
+def build_reply_prompt(character, user_input, response_policy):
+    bounded_knowledge = response_policy.get("bounded_knowledge", {})
+    visible = bounded_knowledge.get("visible_memory", [])
+    inferred = bounded_knowledge.get("inferred_memory", [])
+    blocked = bounded_knowledge.get("blocked_topics", [])
+
+    visible_text = json.dumps(visible, ensure_ascii=False, indent=2)
+    inferred_text = json.dumps(inferred, ensure_ascii=False, indent=2)
+
+    personality = character.get("personality", {})
+    speech_style = character.get("speech_style", {})
+    is_player = character.get("role") == "investigator" or character.get("is_player", False)
+
+    if is_player:
+        behavior_rule = """
+- 이 응답은 대화가 아니라 기억 복기다.
+- 반드시 1인칭 독백처럼 답한다.
+- 자신의 이름을 직접 부르지 않는다.
+- 기억이 흐릿하면 확신하지 않는 표현을 쓴다.
+- 그래도 사건 해결에 도움이 되는 실마리 하나는 남긴다.
+""".strip()
+    else:
+        mode = response_policy.get("mode", "normal")
+        reason = response_policy.get("reason", "")
+        mode_rule_map = {
+            "avoid": f"- 질문이 '{reason}'에 닿았으므로 답을 흐리거나 회피한다.",
+            "deny": f"- 질문이 '{reason}'에 닿았으므로 그 사실을 부인한다.",
+            "minimize": f"- 질문이 '{reason}'에 닿았으므로 자신의 책임을 축소한다.",
+            "shift_blame": f"- 질문이 '{reason}'에 닿았으므로 다른 사람이나 상황 탓으로 돌린다.",
+            "normal": "- 직접 본 것 중심으로만 짧게 답한다.",
+        }
+        behavior_rule = mode_rule_map.get(mode, "- 직접 본 것 중심으로만 짧게 답한다.")
+
+    return f"""
+너는 '{character.get('name')}'이다.
+절대 AI라고 말하지 말고 캐릭터 시점으로만 답해라.
+
+[사용자 질문]
+{user_input}
+
+[관련 직접 기억]
+{visible_text}
+
+[관련 추론]
+{inferred_text}
+
+[말하면 안 되는 영역]
+{blocked}
+
+[캐릭터 핵심]
+- 공개 프로필: {character.get('public_profile', '')}
+- 핵심 개념: {character.get('core_concept', '')}
+- 표면 성격: {personality.get('surface', character.get('personality', ''))}
+- 내면 성격: {personality.get('inner', '') if isinstance(personality, dict) else ''}
+- 압박 시 변화: {personality.get('under_pressure', '') if isinstance(personality, dict) else ''}
+- 기본 말투: {speech_style.get('baseline', character.get('speech_style', '')) if isinstance(speech_style, dict) else character.get('speech_style', '')}
+- 목표: {character.get('goal', '')}
+- 일관성 규칙: {character.get('consistency_rules', [])}
+
+[행동 지침]
+{behavior_rule}
+- 설정에 없는 사실은 만들지 않는다.
+- 직접 본 것과 추론한 것을 섞어 말하더라도, 추론은 확정적으로 말하지 않는다.
+- 답변은 2~5문장으로 짧게 한다.
+""".strip()
+
 
 def generate_character_reply(character, user_input):
     client = get_openai_client()
@@ -425,27 +595,27 @@ def generate_character_reply(character, user_input):
         return "OPENAI_KEY가 설정되지 않아 임시 응답으로 표시됩니다. secrets에 키를 넣어주세요."
 
     try:
-        history = get_chat_log(character["id"])
-        messages = [{"role": "system", "content": build_character_system_prompt(character)}]
-
-        for msg in history:
-            messages.append({"role": msg["role"], "content": msg["content"]})
-
-        messages.append({"role": "user", "content": user_input})
+        query = normalize_question(user_input)
+        memories = retrieve_relevant_memory(character, query)
+        bounded_knowledge = apply_knowledge_boundary(character, memories, query)
+        response_policy = apply_lie_strategy(character, bounded_knowledge, query)
+        prompt = build_reply_prompt(character, user_input, response_policy)
 
         response = client.responses.create(
             model=st.session_state["selected_model"],
-            input=messages,
+            input=[
+                {"role": "system", "content": "너는 추리 게임 캐릭터를 일관되게 연기한다."},
+                {"role": "user", "content": prompt},
+            ],
         )
 
         reply = (response.output_text or "").strip()
         if not reply:
-            return "...지금은 바로 대답하기 어렵네. 다시 물어봐 줘."
+            return "...지금은 바로 떠오르지 않는다."
         return reply
 
     except Exception as e:
         return f"API 응답 생성 중 오류가 발생했습니다: {e}"
-
 
 
 def render_image_placeholder(text, height=200):
