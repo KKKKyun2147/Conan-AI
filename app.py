@@ -77,9 +77,7 @@ def reset_game():
     init_session_state()
 
 
-init_session_state()
-
-
+# 단 한 번만 호출
 init_session_state()
 
 # =====================================================
@@ -150,7 +148,7 @@ def end_interrogation():
 
 
 
-def render_image_placeholder(text, height=200):(text, height=200):
+def render_image_placeholder(text, height=200):
     st.markdown(
         f"""
         <div style="
