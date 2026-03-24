@@ -320,7 +320,7 @@ def render_opening_page():
 
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
-        if st.button("메인 화면으로 이동", use_container_width=True):
+        if st.button("광장으로 이동", use_container_width=True):
             st.session_state["page"] = "main"
             st.rerun()
 
@@ -339,7 +339,7 @@ def render_main_page():
     selected_character_id = st.session_state["selected_character"]
 
     if not selected_character_id:
-        st.markdown("## 메인 화면")
+        st.markdown("## 광장")
         remaining = (
             st.session_state["max_total_interrogations"]
             - st.session_state["total_interrogations_used"]
@@ -423,7 +423,7 @@ def render_accusation_page():
     st.markdown("## 범인 지목")
     st.write("등장인물을 선택하고, 범인이라고 생각하는 이유를 작성하세요.")
 
-    if st.button("메인 화면으로 돌아가기"):
+    if st.button("광장으로 돌아가기"):
         st.session_state["page"] = "main"
         st.rerun()
 
