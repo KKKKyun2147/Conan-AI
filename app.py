@@ -775,7 +775,7 @@ def render_sidebar():
 # 시작 화면
 # =====================================================
 def render_start_page():
-    col1, col2, col3 = st.columns([1, 2, 1])
+    col1, col2, col3 = st.columns([1, 4, 1])
     with col2:
         st.markdown("## 12년의 비밀")
         if Path("images/logo.png").exists():
