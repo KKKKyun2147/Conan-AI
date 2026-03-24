@@ -781,7 +781,7 @@ def render_start_page():
         if Path("images/logo.png").exists():
             st.image("images/logo.png", use_container_width=True)
         else:
-            render_image_placeholder("로고 이미지 자리", height=240)
+            render_image_placeholder("로고 이미지 자리", height=280)
 
         if st.button("게임시작", use_container_width=True):
             st.session_state["page"] = "opening"
