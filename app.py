@@ -328,7 +328,9 @@ def get_openai_client():
 def build_character_system_prompt(character):
     relationships = character.get("relationship", {})
     others = relationships.get("others", {})
-    others_text = "\n".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
+    others_text = "
+".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
+
     emotion = character.get("emotion", {})
     timeline = character.get("timeline", {})
     lie = character.get("lie", {})
@@ -415,7 +417,73 @@ def normalize_question(user_input: str) -> str:
     return user_input.strip().lower()
 
 
+def retrieve_investigator_memory(character, query: str):
+    memories = []
+    memory_state = character.get("memory_state", {})
+
+    fragmented = memory_state.get("fragmented_memories", [])
+    recovered = memory_state.get("recovered_clues", [])
+    triggers = memory_state.get("trigger_keywords", {})
+
+    for item in fragmented:
+        joined = " ".join([
+            str(item.get("title", "")),
+            str(item.get("summary", "")),
+            " ".join(item.get("keywords", [])),
+        ]).lower()
+
+        score = sum(1 for token in query.split() if token and token in joined)
+        for trigger_word, trigger_desc in triggers.items():
+            if trigger_word.lower() in query:
+                score += 2
+                joined += f" {trigger_desc}".lower()
+
+        if score > 0:
+            memories.append((score, {
+                "type": "fragment",
+                "title": item.get("title", ""),
+                "summary": item.get("summary", ""),
+                "keywords": item.get("keywords", []),
+            }))
+
+    for item in recovered:
+        joined = " ".join([
+            str(item.get("title", "")),
+            str(item.get("summary", "")),
+            " ".join(item.get("keywords", [])),
+        ]).lower()
+
+        score = sum(1 for token in query.split() if token and token in joined)
+        for trigger_word in triggers.keys():
+            if trigger_word.lower() in query:
+                score += 1
+
+        if score > 0:
+            memories.append((score, {
+                "type": "recovered",
+                "title": item.get("title", ""),
+                "summary": item.get("summary", ""),
+                "keywords": item.get("keywords", []),
+            }))
+
+    if not memories:
+        default_fragment = memory_state.get("baseline_fragment", "")
+        if default_fragment:
+            return [{
+                "type": "baseline",
+                "title": "흐릿한 기억",
+                "summary": default_fragment,
+                "keywords": [],
+            }]
+
+    memories.sort(key=lambda x: x[0], reverse=True)
+    return [memory for _, memory in memories[:3]]
+
+
 def retrieve_relevant_memory(character, query: str):
+    if character.get("role") == "investigator" or character.get("is_player", False):
+        return retrieve_investigator_memory(character, query)
+
     memories = []
 
     for memory in character.get("timeline_memory", []):
@@ -443,6 +511,18 @@ def retrieve_relevant_memory(character, query: str):
 
 
 def apply_knowledge_boundary(character, memories, query: str):
+    if character.get("role") == "investigator" or character.get("is_player", False):
+        memory_state = character.get("memory_state", {})
+        blocked_topics = [
+            item for item in memory_state.get("blocked_topics", [])
+            if str(item).lower() in query
+        ]
+        return {
+            "visible_memory": memories,
+            "inferred_memory": [],
+            "blocked_topics": blocked_topics,
+        }
+
     kb = character.get("knowledge_boundary", {})
     directly_seen = kb.get("directly_seen", [])
     inferred = kb.get("inferred", [])
