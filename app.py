@@ -54,6 +54,7 @@ CHARACTERS = load_characters(CHARACTER_FILE)
 # 세션 상태
 # =====================================================
 SESSION_DEFAULTS = {
+    "opening_slide_index": 0,
     "page": "start",  # start -> opening -> main -> accuse -> result
     "day": 1,
     "selected_character": None,
@@ -328,7 +329,9 @@ def get_openai_client():
 def build_character_system_prompt(character):
     relationships = character.get("relationship", {})
     others = relationships.get("others", {})
-    others_text = "\n".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
+    others_text = "
+".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
+
     emotion = character.get("emotion", {})
     timeline = character.get("timeline", {})
     lie = character.get("lie", {})
@@ -749,8 +752,6 @@ def render_sidebar():
         st.markdown(
             f"**심문 횟수:** {st.session_state['total_interrogations_used']} / {st.session_state['max_total_interrogations']}"
         )
-        st.markdown(f"**모델:** {st.session_state['selected_model']}")
-
         for character in CHARACTERS:
             st.markdown("---")
             render_character_image(character, height=140, placeholder_text="초상화 자리")
@@ -791,13 +792,61 @@ def render_start_page():
 # 오프닝 화면
 # =====================================================
 def render_opening_page():
-    st.markdown("## 사건 오프닝")
-    render_image_placeholder("오프닝 이미지 자리", height=280)
-    st.write(CASE_SUMMARY)
+    opening_slides = [
+        {
+            "title": "오프닝 1",
+            "body": "12년 전, 한 아이가 흔적도 없이 사라졌다. 사건은 실종으로 마무리되었지만, 진실은 아직 묻혀 있다.",
+            "placeholder": "오프닝 이미지 1 자리",
+        },
+        {
+            "title": "오프닝 2",
+            "body": "사건 당시 가족, 이웃, 그리고 수사 담당 형사까지. 모두가 무언가를 보았지만, 각자의 방식으로 기억을 감추고 있다.",
+            "placeholder": "오프닝 이미지 2 자리",
+        },
+        {
+            "title": "오프닝 3",
+            "body": "시간이 흐르며 진술은 흐려졌고, 거짓말은 기억처럼 굳어졌다. 하지만 모순은 완전히 사라지지 않았다.",
+            "placeholder": "오프닝 이미지 3 자리",
+        },
+        {
+            "title": "오프닝 4",
+            "body": "당신은 제한된 심문 기회 안에 사람들의 말과 기억의 틈을 파고들어야 한다. 누가 진실을 숨기고 있는가.",
+            "placeholder": "오프닝 이미지 4 자리",
+        },
+        {
+            "title": "오프닝 5",
+            "body": "이제 광장으로 나가 진실을 마주할 시간이다. 다섯 인물을 만나고, 숨겨진 사건의 실체를 밝혀라.",
+            "placeholder": "오프닝 이미지 5 자리",
+        },
+    ]
 
-    col1, col2, col3 = st.columns([1, 1, 1])
-    with col2:
-        if st.button("광장으로 이동", use_container_width=True):
+    slide_index = st.session_state["opening_slide_index"]
+    slide = opening_slides[slide_index]
+
+    st.markdown("## 사건 오프닝")
+    st.caption(f"{slide_index + 1} / {len(opening_slides)}")
+    st.markdown(f"### {slide['title']}")
+    render_image_placeholder(slide["placeholder"], height=280)
+    st.write(slide["body"])
+
+    prev_col, center_col, next_col = st.columns([1, 2, 1])
+    with prev_col:
+        if st.button("← 이전", use_container_width=True, disabled=slide_index == 0):
+            st.session_state["opening_slide_index"] -= 1
+            st.rerun()
+    with next_col:
+        if st.button("다음 →", use_container_width=True, disabled=slide_index == len(opening_slides) - 1):
+            st.session_state["opening_slide_index"] += 1
+            st.rerun()
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    _, center_button_col, _ = st.columns([1, 1, 1])
+    with center_button_col:
+        if st.button(
+            "광장으로 이동",
+            use_container_width=True,
+            disabled=slide_index != len(opening_slides) - 1,
+        ):
             st.session_state["page"] = "main"
             st.rerun()
 
