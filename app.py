@@ -20,9 +20,19 @@ CASE_SUMMARY = """
 당신은 제한된 심문 기회 안에 인물들의 거짓말을 파헤치고 진실에 도달해야 한다.
 """
 
-CASE_DATA = {
-    "reason_keywords": ["방치", "유기", "은폐", "숨김", "버림", "허위 주장", "거짓 진술", "증거 인멸", "증거를 인멸", "조작", "거짓말"],
-    "min_reason_keyword_matches": 2,
+keyword_groups = {
+    "neglect": [
+        "방치", "방임", "유기", "돌보지", "제대로 돌보지", "버려두", "아이 홀로", "아이 혼자", "아이를 홀로", "아이를 혼자"
+    ],
+    "concealment": [
+        "은폐", "숨김", "숨겼", "숨기고", "감춤", "감추고", "감췄", "버림", "버렸", "시신 유기", "시체 유기", "시신을 옮기", "시신유기", "시체유기"
+    ],
+    "false_statement": [
+        "허위 주장", "허위주장", "허위진술", "허위 진술", "거짓 진술", "거짓진술", "거짓으로 진술", "거짓말", "둘러댐", "둘러대고", "둘러댔", "거짓으로 꾸밈"
+    ],
+    "evidence_destruction": [
+        "증거 인멸", "증거인멸", "증거를 인멸", "증거를 없앰", "증거를 없애", "흔적 제거", "흔적제거", "흔적을 제거", "조작", "흔적을 지움"
+    ]
 }
 
 FALLBACK_CHARACTERS = [
@@ -190,9 +200,15 @@ def is_reason_correct(reason_text: str):
     if not normalized:
         return False
 
-    keywords = CASE_DATA["reason_keywords"]
-    matched = sum(1 for keyword in keywords if keyword.lower() in normalized)
-    return matched >= CASE_DATA["min_reason_keyword_matches"]
+    matched_groups = set()
+
+    for group_name, keywords in keyword_groups.items():
+        for keyword in keywords:
+            if keyword.lower() in normalized:
+                matched_groups.add(group_name)
+                break  # 한 그룹에서 하나라도 맞으면 충분
+
+    return len(matched_groups) >= 3
 
 
 
