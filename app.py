@@ -328,9 +328,7 @@ def get_openai_client():
 def build_character_system_prompt(character):
     relationships = character.get("relationship", {})
     others = relationships.get("others", {})
-    others_text = "
-".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
-
+    others_text = "\n".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
     emotion = character.get("emotion", {})
     timeline = character.get("timeline", {})
     lie = character.get("lie", {})
