@@ -800,7 +800,7 @@ def render_opening_page():
 관련자들의 기억은 서로 어긋난다.
 
 당신은 이 사건을 다시 조사하게 된 사람이다.""",
-            "placeholder": "오프닝 이미지 1 자리",
+            "image": "images/opening1.png",
         },
         {
             "title": "오프닝 2",
@@ -812,7 +812,7 @@ def render_opening_page():
 누군가는 기억을 왜곡하고,
 누군가는 일부만 말하며,
 누군가는 의도적으로 숨긴다.""",
-            "placeholder": "오프닝 이미지 2 자리",
+            "image": "images/opening2.png",
         },
         {
             "title": "오프닝 3",
@@ -826,7 +826,7 @@ def render_opening_page():
 
 그리고 그 모순을 통해
 사건의 흐름을 재구성해야 한다.""",
-            "placeholder": "오프닝 이미지 3 자리",
+            "image": "images/opening3.png",
         },
         {
             "title": "오프닝 4",
@@ -841,7 +841,7 @@ def render_opening_page():
 
 답이 바뀌는 순간,
 단서가 드러난다.""",
-            "placeholder": "오프닝 이미지 4 자리",
+            "image": "images/opening4.png",
         },
         {
             "title": "오프닝 5",
@@ -856,7 +856,7 @@ def render_opening_page():
 
 작은 어긋남 하나가
 이 사건을 해결하는 시작점이 된다.""",
-            "placeholder": "오프닝 이미지 5 자리",
+            "image": "images/opening5.png",
         },
     ]
 
@@ -866,7 +866,10 @@ def render_opening_page():
     st.markdown("## 사건 오프닝")
     st.caption(f"{slide_index + 1} / {len(opening_slides)}")
     st.markdown(f"### {slide['title']}")
-    render_image_placeholder(slide["placeholder"], height=280)
+    if slide.get("image") and Path(slide["image"]).exists():
+        st.image(slide["image"], use_container_width=True)
+    else:
+        render_image_placeholder("이미지 없음", height=280)
     st.write(slide["body"])
 
     prev_col, center_col, next_col = st.columns([1, 2, 1])
