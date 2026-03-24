@@ -21,7 +21,7 @@ CASE_SUMMARY = """
 """
 
 CASE_DATA = {
-    "reason_keywords": ["방치", "시신 유기", "실종 신고 조작"],
+    "reason_keywords": ["방치", "유기", "은폐", "숨김", "버림", "허위 주장", "거짓 진술", "증거 인멸", "조작", "거짓말"],
     "min_reason_keyword_matches": 2,
 }
 
