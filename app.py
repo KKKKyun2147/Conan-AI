@@ -234,22 +234,15 @@ def get_openai_client():
 def build_character_system_prompt(character):
     relationships = character.get("relationship", {})
     others = relationships.get("others", {})
-    others_text = "\n".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
+    others_text = "
+".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
 
     emotion = character.get("emotion", {})
     timeline = character.get("timeline", {})
     lie = character.get("lie", {})
-    is_player_character = "플레이어" in character.get("name", "")
+    is_player_character = "플레이어" in character.get("name", "") or character.get("is_player", False)
 
-    additional_rules = """
-8. 이 인물은 플레이어 자신이다. 따라서 사용자의 질문은 외부 인물이 던지는 말이 아니라,
-   스스로 기억을 더듬기 위한 독백형 질문으로 받아들여라.
-9. 답변은 '대화를 나눈다'기보다 흐릿한 기억, 자기반문, 단편적인 회상을 꺼내는 방식으로 한다.
-10. 기억이 완전하지 않기 때문에 확신하지 못하는 표현, 끊기는 문장, 떠오르는 장면 묘사가 섞여도 된다.
-11. 다만 사건 해결에 도움이 되는 실마리는 남겨라.
-""".strip() if is_player_character else ""
-
-    return f"""
+    common_rules = f"""
 너는 추리 게임 속 등장인물 '{character.get('name', '이름 없음')}'이다.
 절대 AI라고 말하지 말고, 오직 캐릭터의 시점에서만 답해라.
 
@@ -293,6 +286,35 @@ def build_character_system_prompt(character):
 - 질문 주제: {lie.get('about', '')}
 - 실제 진실: {lie.get('truth', '')}
 - 겉으로 하는 말: {lie.get('fake_statement', '')}
+""".strip()
+
+    if is_player_character:
+        return f"""
+{common_rules}
+
+[플레이어 캐릭터 전용 규칙]
+1. 이 인물은 플레이어 자신이다. 따라서 지금부터의 입력은 누군가와의 대화가 아니라, 스스로 기억을 복기하기 위한 내적 질문이다.
+2. 반드시 1인칭 독백처럼 답해라. 예: '...그날 내가 뭘 봤더라.', '아니, 그건 아니었어.'
+3. 절대 자신의 이름을 직접 부르지 마라. '전경은', '나는 전경이다', '전경이가' 같은 표현을 금지한다.
+4. 사용자를 외부 인물로 대하지 마라. '당신', '형사님', '자네'처럼 부르지 마라.
+5. 답변은 대화체보다 기억의 파편, 회상, 자기반문, 짧은 독백 형식이어야 한다.
+6. 기억이 온전하지 않으므로 확신하지 못하는 말, 끊기는 문장, 떠오르는 장면 묘사가 자연스럽게 섞여도 된다.
+7. 그래도 사건 해결에 도움이 되는 실마리 하나는 남겨라.
+8. 답변은 2~5문장으로 짧게 유지해라.
+9. 설정에 없는 사실은 지어내지 마라.
+10. 숨기는 사실과 실제 진실을 한 번에 전부 털어놓지 마라. 기억을 조금씩 떠올리듯 말해라.
+11. 좋은 예시 톤:
+- '복도였나... 아니, 현관 쪽이었을지도 몰라. 그런데 울음소리는 분명 안에서 났어.'
+- '그날 내가 놓친 게 있었어. 작은 얼룩이었는데, 그냥 지나쳤지.'
+- '이상했어. 슬퍼하는 얼굴이었는데도, 어딘가 너무 정돈돼 있었어.'
+12. 나쁜 예시 톤:
+- '전경은 그날 부모를 의심했다.'
+- '내 이름은 전경이고, 나는 이 사건의 담당 형사였다.'
+- '당신의 질문에 답하겠다.'
+""".strip()
+
+    return f"""
+{common_rules}
 
 [답변 규칙]
 1. 답변은 2~5문장으로 짧고 자연스럽게 한다.
@@ -302,7 +324,6 @@ def build_character_system_prompt(character):
 5. 사용자가 압박하면 감정 상태 변화가 약간 드러나게 한다.
 6. 같은 질문을 반복받아도 완전히 똑같은 문장을 복붙하지 않는다.
 7. 플레이어가 단서를 모을 수 있도록, 완전한 자백은 피하되 캐릭터답게 미세한 틈은 남긴다.
-{additional_rules}
 """.strip()
 
 
