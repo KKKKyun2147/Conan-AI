@@ -305,15 +305,11 @@ def judge_accusation():
     ])
     if culprit_correct and reason_correct:
         st.session_state["accusation_result"] = "success"
-        st.session_state["result_message"] = combined_reaction + "
-
-범인 지목 성공!"
+        st.session_state["result_message"] = combined_reaction + "\n범인 지목 성공!"
         st.session_state["game_over"] = True
     else:
         st.session_state["accusation_result"] = "fail"
-        st.session_state["result_message"] = combined_reaction + "
-
-실패.."
+        st.session_state["result_message"] = combined_reaction + "\n실패.."
 
     st.session_state["page"] = "result"
 
@@ -330,8 +326,7 @@ def get_openai_client():
 def build_character_system_prompt(character):
     relationships = character.get("relationship", {})
     others = relationships.get("others", {})
-    others_text = "
-".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
+    others_text = "\n".join([f"- {name}: {desc}" for name, desc in others.items()]) or "- 없음"
 
     emotion = character.get("emotion", {})
     timeline = character.get("timeline", {})
