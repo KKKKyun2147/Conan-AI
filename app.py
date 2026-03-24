@@ -31,6 +31,11 @@ SESSION_DEFAULTS = {
     "game_over": False,
     "chat_logs": {},                   # {char_id: [{role, content, time}]}
     "chat_counts": {},                 # {char_id: int}
+    "total_interrogations_used": 0,    # 전체 심문 사용 횟수
+    "max_total_interrogations": 10,    # 전체 심문 가능 횟수
+    "current_questions_used": 0,       # 현재 심문에서 사용한 질문 수
+    "max_questions_per_interrogation": 3,
+    "interrogation_active": False,     # 현재 심문 진행 중인지
 }
 
 
@@ -70,6 +75,9 @@ def reset_game():
     for key in list(st.session_state.keys()):
         del st.session_state[key]
     init_session_state()
+
+
+init_session_state()
 
 
 init_session_state()
@@ -114,7 +122,35 @@ def mock_character_reply(user_input, char_name):
 
 
 
-def render_image_placeholder(text, height=200):
+def can_start_new_interrogation():
+    return (
+        st.session_state["total_interrogations_used"]
+        < st.session_state["max_total_interrogations"]
+    )
+
+
+
+def start_interrogation(char_id):
+    if not can_start_new_interrogation():
+        return False
+
+    st.session_state["selected_character"] = char_id
+    st.session_state["interrogation_active"] = True
+    st.session_state["current_questions_used"] = 0
+    st.session_state["total_interrogations_used"] += 1
+    st.session_state["day"] = st.session_state["total_interrogations_used"]
+    return True
+
+
+
+def end_interrogation():
+    st.session_state["selected_character"] = None
+    st.session_state["interrogation_active"] = False
+    st.session_state["current_questions_used"] = 0
+
+
+
+def render_image_placeholder(text, height=200):(text, height=200):
     st.markdown(
         f"""
         <div style="
@@ -145,11 +181,22 @@ def render_sidebar():
         st.title("등장인물")
 
         interrogation_enabled = st.session_state["page"] == "main"
+        interrogation_active = st.session_state["interrogation_active"]
+        no_more_turns = not can_start_new_interrogation()
 
         if interrogation_enabled:
-            st.caption("인물을 선택하면 해당 인물과의 대화창이 열립니다.")
+            if interrogation_active:
+                st.caption("현재 심문이 진행 중입니다. 질문 3개를 모두 사용한 뒤 돌아가기를 눌러주세요.")
+            elif no_more_turns:
+                st.caption("모든 심문 기회를 사용했습니다. 이제 범인을 지목해야 합니다.")
+            else:
+                st.caption("인물을 선택하면 심문이 시작됩니다.")
         else:
             st.caption("게임 시작 후 메인 화면에서 심문할 수 있습니다.")
+
+        st.markdown(
+            f"**심문 횟수:** {st.session_state['total_interrogations_used']} / {st.session_state['max_total_interrogations']}"
+        )
 
         for character in CHARACTERS:
             st.markdown("---")
@@ -159,21 +206,21 @@ def render_sidebar():
             else:
                 render_image_placeholder("초상화 자리", height=140)
 
-            if interrogation_enabled:
-                if st.button(
-                    character["name"],
-                    key=f"select_{character['id']}",
-                    use_container_width=True,
-                ):
-                    st.session_state["selected_character"] = character["id"]
+            button_disabled = (
+                (not interrogation_enabled)
+                or interrogation_active
+                or no_more_turns
+            )
+
+            if st.button(
+                character["name"],
+                key=f"select_{character['id']}",
+                use_container_width=True,
+                disabled=button_disabled,
+            ):
+                started = start_interrogation(character["id"])
+                if started:
                     st.rerun()
-            else:
-                st.button(
-                    character["name"],
-                    key=f"select_{character['id']}",
-                    use_container_width=True,
-                    disabled=True,
-                )
 
         st.markdown("---")
         if st.button("게임 초기화", use_container_width=True):
@@ -217,17 +264,24 @@ def render_opening_page():
 def render_main_page():
     header_left, header_right = st.columns([6, 1])
     with header_right:
-        st.markdown(f"### {st.session_state['day']}일차")
+        used = st.session_state["total_interrogations_used"]
+        max_used = st.session_state["max_total_interrogations"]
+        st.markdown(f"### {used}일차")
+        st.caption(f"심문 {used}/{max_used}")
 
     selected_character_id = st.session_state["selected_character"]
 
     if not selected_character_id:
         st.markdown("## 메인 화면")
-        st.info("왼쪽 사이드바에서 심문할 등장인물을 선택하세요.")
+        remaining = (
+            st.session_state["max_total_interrogations"]
+            - st.session_state["total_interrogations_used"]
+        )
+        st.info(f"왼쪽 사이드바에서 심문할 등장인물을 선택하세요. 남은 심문 횟수: {remaining}회")
 
         _, _, button_col = st.columns([5, 2, 1])
         with button_col:
-            st.button("범인 지목", disabled=True, use_container_width=True)
+            st.button("범인 지목", disabled=False, use_container_width=True)
         return
 
     character = get_character_by_id(selected_character_id)
@@ -246,6 +300,9 @@ def render_main_page():
             render_image_placeholder("선택한 인물의 초상화 자리", height=360)
 
         st.caption(f"저장된 메시지 수: {get_chat_count(selected_character_id)}")
+        st.caption(
+            f"이번 심문 질문 수: {st.session_state['current_questions_used']} / {st.session_state['max_questions_per_interrogation']}"
+        )
 
     with right_col:
         chat_container = st.container(border=True)
@@ -260,12 +317,25 @@ def render_main_page():
                         st.write(msg["content"])
                         st.caption(msg["time"])
 
-        user_input = st.chat_input(f"{character['name']}에게 질문하기")
-        if user_input:
-            add_message(selected_character_id, "user", user_input)
-            reply = mock_character_reply(user_input, character["name"])
-            add_message(selected_character_id, "assistant", reply)
-            st.rerun()
+        questions_used = st.session_state["current_questions_used"]
+        max_questions = st.session_state["max_questions_per_interrogation"]
+        interrogation_finished = questions_used >= max_questions
+
+        if interrogation_finished:
+            st.warning("이번 심문에서는 질문 3개를 모두 사용했습니다. 돌아가기를 눌러 메인 화면으로 이동하세요.")
+            if st.button("돌아가기", use_container_width=True):
+                end_interrogation()
+                st.rerun()
+        else:
+            user_input = st.chat_input(
+                f"{character['name']}에게 질문하기 ({questions_used + 1}/{max_questions})"
+            )
+            if user_input:
+                add_message(selected_character_id, "user", user_input)
+                reply = mock_character_reply(user_input, character["name"])
+                add_message(selected_character_id, "assistant", reply)
+                st.session_state["current_questions_used"] += 1
+                st.rerun()
 
     st.markdown("<br>", unsafe_allow_html=True)
     _, _, button_col = st.columns([5, 2, 1])
