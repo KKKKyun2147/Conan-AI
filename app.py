@@ -6,7 +6,7 @@ from pathlib import Path
 import streamlit as st
 from openai import OpenAI
 
-st.set_page_config(page_title="온라인 탐정게임", layout="wide")
+st.set_page_config(page_title="12년의 비밀", layout="wide")
 
 # =====================================================
 # 기본 설정
@@ -777,8 +777,11 @@ def render_sidebar():
 def render_start_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
-        st.markdown("## 온라인 탐정게임")
-        render_image_placeholder("로고 이미지 자리", height=240)
+        st.markdown("## 12년의 비밀")
+        if Path("images/logo.png").exists():
+            st.image("images/logo.png", use_container_width=True)
+        else:
+            render_image_placeholder("로고 이미지 자리", height=240)
 
         if st.button("게임시작", use_container_width=True):
             st.session_state["page"] = "opening"
